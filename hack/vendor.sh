@@ -175,4 +175,11 @@ clone git github.com/spf13/pflag dabebe21bf790f782ea4c7bbd2efc430de182afd
 clone git github.com/inconshreveable/mousetrap 76626ae9c91c4f2a10f34cad8ce83ea42c93bb75
 clone git github.com/flynn-archive/go-shlex 3f9db97f856818214da2e1057f8ad84803971cff
 
+# composefile
+clone git github.com/mattn/go-shellwords 525bedee691b5a8df547cb5cf9f86b7fb1883e24
+clone git github.com/xeipuuv/gojsonpointer e0fe6f68307607d540ed8eac07a342c33fa1b54a
+clone git github.com/xeipuuv/gojsonreference e02fc20de94c78484cd5ffb007f8af96be030a45
+clone git github.com/xeipuuv/gojsonschema 93e72a773fade158921402d6a24c819b48aba29d
+clone git gopkg.in/yaml.v2 a83829b6f1293c91addabc89d0571c246397bbf4
+
 clean
