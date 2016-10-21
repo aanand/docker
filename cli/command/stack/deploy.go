@@ -4,7 +4,6 @@ package stack
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/net/context"
@@ -21,7 +20,7 @@ const (
 )
 
 type deployOptions struct {
-	bundlefile       string
+	composefile      string
 	namespace        string
 	sendRegistryAuth bool
 }
@@ -32,16 +31,15 @@ func newDeployCommand(dockerCli *command.DockerCli) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "deploy [OPTIONS] STACK",
 		Aliases: []string{"up"},
-		Short:   "Create and update a stack from a Distributed Application Bundle (DAB)",
+		Short:   "Deploy a new stack or update an existing stack",
 		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts.namespace = strings.TrimSuffix(args[0], ".dab")
 			return runDeploy(dockerCli, opts)
 		},
 	}
 
 	flags := cmd.Flags()
-	addBundlefileFlag(&opts.bundlefile, flags)
+	addComposefileFlag(&opts.composefile, flags)
 	addRegistryAuthFlag(&opts.sendRegistryAuth, flags)
 	return cmd
 }
