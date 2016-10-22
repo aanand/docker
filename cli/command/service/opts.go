@@ -329,7 +329,7 @@ func (e *endpointOptions) ToEndpointSpec() *swarm.EndpointSpec {
 	ports, portBindings, _ := nat.ParsePortSpecs(e.ports.GetAll())
 
 	for port := range ports {
-		portConfigs = append(portConfigs, convertPortToPortConfig(port, portBindings)...)
+		portConfigs = append(portConfigs, ConvertPortToPortConfig(port, portBindings)...)
 	}
 
 	return &swarm.EndpointSpec{
@@ -338,7 +338,8 @@ func (e *endpointOptions) ToEndpointSpec() *swarm.EndpointSpec {
 	}
 }
 
-func convertPortToPortConfig(
+// ConvertPortToPortConfig converts ports to the swarm type
+func ConvertPortToPortConfig(
 	port nat.Port,
 	portBindings map[nat.Port][]nat.PortBinding,
 ) []swarm.PortConfig {
