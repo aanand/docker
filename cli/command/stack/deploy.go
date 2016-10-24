@@ -260,7 +260,7 @@ func convertService(
 				Image:   service.Image,
 				Command: service.Entrypoint,
 				Args:    service.Command,
-				// TODO: Env:     service.Environment,
+				Env:     convertEnvironment(service.Environment),
 				// Service Labels will not be copied to Containers
 				// automatically during the deployment so we apply
 				// it here.
@@ -290,4 +290,14 @@ func convertEndpointSpec(source []string) (*swarm.EndpointSpec, error) {
 	}
 
 	return &swarm.EndpointSpec{Ports: portConfigs}, nil
+}
+
+func convertEnvironment(source map[string]string) []string {
+	var output []string
+
+	for name, value := range source {
+		output = append(output, fmt.Sprintf("%s=%s", name, value))
+	}
+
+	return output
 }
