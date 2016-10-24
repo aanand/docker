@@ -88,6 +88,7 @@ type NetworkConfig struct {
 	DriverOpts   map[string]string
 	Ipam         IPAMConfig
 	ExternalName string
+	Labels       map[string]string `compose:"list_or_dict_equals"`
 }
 
 type IPAMConfig struct {
@@ -103,4 +104,5 @@ type VolumeConfig struct {
 	Driver       string
 	DriverOpts   map[string]string
 	ExternalName string
+	Labels       map[string]string `compose:"list_or_dict_equals"`
 }

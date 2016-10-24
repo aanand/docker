@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-04/schema#",
-  "id": "config_schema_v2.1.json",
+  "id": "config_schema_v3.json",
   "type": "object",
   "required": ["version"],
 
@@ -222,7 +222,8 @@
             "name": {"type": "string"}
           },
           "additionalProperties": false
-        }
+        },
+        "labels": {"$ref": "#/definitions/list_or_dict"}
       },
       "additionalProperties": false
     },
@@ -245,6 +246,7 @@
           }
         }
       },
+      "labels": {"$ref": "#/definitions/list_or_dict"},
       "additionalProperties": false
     },
 
