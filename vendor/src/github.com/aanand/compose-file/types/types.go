@@ -76,6 +76,7 @@ type LoggingConfig struct {
 type DeployConfig struct {
 	Mode string
 	Replicas uint64
+	Labels        map[string]string `compose:"list_or_dict_equals"`
 }
 
 type ServiceNetworkConfig struct {

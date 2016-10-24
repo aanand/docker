@@ -267,12 +267,9 @@ func convertService(
 				Command: service.Entrypoint,
 				Args:    service.Command,
 				Env:     convertEnvironment(service.Environment),
-				// Service Labels will not be copied to Containers
-				// automatically during the deployment so we apply
-				// it here.
-				Labels: getStackLabels(namespace, nil),
-				Dir:    service.WorkingDir,
-				User:   service.User,
+				Labels:  getStackLabels(namespace, service.Deploy.Labels),
+				Dir:     service.WorkingDir,
+				User:    service.User,
 			},
 		},
 		EndpointSpec: endpoint,
