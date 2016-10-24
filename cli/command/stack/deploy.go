@@ -271,6 +271,9 @@ func convertService(
 				Dir:     service.WorkingDir,
 				User:    service.User,
 			},
+			Placement: &swarm.Placement{
+				Constraints: service.Deploy.Placement.Constraints,
+			},
 		},
 		EndpointSpec: endpoint,
 		Mode:         mode,

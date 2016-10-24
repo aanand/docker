@@ -77,6 +77,11 @@ type DeployConfig struct {
 	Mode string
 	Replicas uint64
 	Labels        map[string]string `compose:"list_or_dict_equals"`
+	Placement Placement
+}
+
+type Placement struct {
+	Constraints []string
 }
 
 type ServiceNetworkConfig struct {
