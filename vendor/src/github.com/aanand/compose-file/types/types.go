@@ -28,6 +28,7 @@ type ServiceConfig struct {
 	Command       []string `compose:"shell_command"`
 	ContainerName string
 	DependsOn     []string
+	Deploy DeployConfig
 	Devices       []string
 	Dns           []string `compose:"string_or_list"`
 	DnsSearch     []string `compose:"string_or_list"`
@@ -56,6 +57,7 @@ type ServiceConfig struct {
 	SecurityOpt   []string
 	ShmSize       int `compose:"size"`
 	StdinOpen     bool
+	StopGracePeriod *string
 	StopSignal    string
 	Tmpfs         []string `compose:"string_or_list"`
 	Tty           bool
@@ -69,6 +71,11 @@ type ServiceConfig struct {
 type LoggingConfig struct {
 	Driver  string
 	Options map[string]string
+}
+
+type DeployConfig struct {
+	Mode string
+	Replicas uint64
 }
 
 type ServiceNetworkConfig struct {

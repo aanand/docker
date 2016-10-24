@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/net/context"
@@ -250,6 +251,11 @@ func convertService(
 		return swarm.ServiceSpec{}, err
 	}
 
+	mode, err := convertDeployMode(service.Deploy.Mode, service.Deploy.Replicas)
+	if err != nil {
+		return swarm.ServiceSpec{}, err
+	}
+
 	serviceSpec := swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
 			Name:   name,
@@ -270,8 +276,18 @@ func convertService(
 			},
 		},
 		EndpointSpec: endpoint,
+		Mode:         mode,
 		Networks:     convertNetworks(service.Networks, namespace, service.Name),
 	}
+
+	if service.StopGracePeriod != nil {
+		stopGrace, err := time.ParseDuration(*service.StopGracePeriod)
+		if err != nil {
+			return swarm.ServiceSpec{}, err
+		}
+		serviceSpec.TaskTemplate.ContainerSpec.StopGracePeriod = &stopGrace
+	}
+
 	// TODO: convert mounts
 	return serviceSpec, nil
 }
@@ -300,4 +316,21 @@ func convertEnvironment(source map[string]string) []string {
 	}
 
 	return output
+}
+
+func convertDeployMode(mode string, replicas uint64) (swarm.ServiceMode, error) {
+	serviceMode := swarm.ServiceMode{}
+
+	switch mode {
+	case "global":
+		if replicas != 0 {
+			return serviceMode, fmt.Errorf("replicas can only be used with replicated mode")
+		}
+		serviceMode.Global = &swarm.GlobalService{}
+	case "replicated":
+		serviceMode.Replicated = &swarm.ReplicatedService{Replicas: &replicas}
+	default:
+		return serviceMode, fmt.Errorf("Unknown mode: %s", mode)
+	}
+	return serviceMode, nil
 }
