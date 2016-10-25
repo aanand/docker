@@ -156,7 +156,7 @@
         "shm_size": {"type": ["number", "string"]},
         "stdin_open": {"type": "boolean"},
         "stop_signal": {"type": "string"},
-        "stop_grace_period": {"type": "sting", "format": "duration"},
+        "stop_grace_period": {"type": "string", "format": "duration"},
         "tmpfs": {"$ref": "#/definitions/string_or_list"},
         "tty": {"type": "boolean"},
         "ulimits": {
@@ -204,15 +204,15 @@
             "delay": {"type": "string", "format": "duration"},
             "failure_action": {"type": "string"},
             "monitor": {"type": "string", "format": "duration"},
-            "max_failure_ratio": {"type", "float"}
+            "max_failure_ratio": {"type": "number"}
           },
           "additionalProperties": false
         },
         "resources": {
           "type": "object",
           "properties": {
-            "limits": {"$ref": "#definitions/resource"},
-            "reservations": {"$ref": "#definitions/resource"}
+            "limits": {"$ref": "#/definitions/resource"},
+            "reservations": {"$ref": "#/definitions/resource"}
           }
         },
         "restart_policy": {
@@ -237,7 +237,7 @@
     },
 
     "resource": {
-      "id": "#definitions/resource",
+      "id": "#/definitions/resource",
       "type": "object",
       "properties": {
         "cpus": {"type": "string"},

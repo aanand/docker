@@ -93,7 +93,14 @@ func getConfigFile(filename string) (*composetypes.ConfigFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	return loader.ParseYAML(bytes, filename)
+	config, err := loader.ParseYAML(bytes)
+	if err != nil {
+		return nil, err
+	}
+	return &composetypes.ConfigFile{
+		Filename: filename,
+		Config:   config,
+	}, nil
 }
 
 func createNetworks(
