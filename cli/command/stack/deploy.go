@@ -179,13 +179,16 @@ func convertVolumes(
 	serviceVolumes []string,
 	stackVolumes map[string]composetypes.VolumeConfig,
 	namespace string,
-) []mount.Mount {
+) ([]mount.Mount, error) {
 	var mounts []mount.Mount
 
 	for _, volumeString := range serviceVolumes {
-		var source, target string
-		var mountType mount.Type
-		var readOnly bool
+		var (
+			source, target string
+			mountType      mount.Type
+			readOnly       bool
+			volumeOptions  *mount.VolumeOptions
+		)
 
 		// TODO: split Windows path mappings properly
 		parts := strings.SplitN(volumeString, ":", 3)
@@ -208,20 +211,40 @@ func convertVolumes(
 			mountType = mount.TypeBind
 		} else {
 			mountType = mount.TypeVolume
+
+			stackVolume, exists := stackVolumes[source]
+			if !exists {
+				// TODO: better error message (include service name)
+				return nil, fmt.Errorf("Undefined volume: %s", source)
+			}
+
+			volumeOptions = &mount.VolumeOptions{
+				Labels: stackVolume.Labels,
+			}
+
+			if stackVolume.Driver != "" {
+				volumeOptions.DriverConfig = &mount.Driver{
+					Name:    stackVolume.Driver,
+					Options: stackVolume.DriverOpts,
+				}
+			}
+
+			// TODO: handle external volumes
+
 			// TODO: remove this duplication
 			source = fmt.Sprintf("%s_%s", namespace, source)
 		}
 
-		// TODO: driver + options
 		mounts = append(mounts, mount.Mount{
-			Type:     mountType,
-			Source:   source,
-			Target:   target,
-			ReadOnly: readOnly,
+			Type:          mountType,
+			Source:        source,
+			Target:        target,
+			ReadOnly:      readOnly,
+			VolumeOptions: volumeOptions,
 		})
 	}
 
-	return mounts
+	return mounts, nil
 }
 
 func deployServices(
@@ -314,6 +337,11 @@ func convertService(
 		return swarm.ServiceSpec{}, err
 	}
 
+	mounts, err := convertVolumes(service.Volumes, volumes, namespace)
+	if err != nil {
+		return swarm.ServiceSpec{}, err
+	}
+
 	serviceSpec := swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
 			Name:   name,
@@ -328,7 +356,7 @@ func convertService(
 				Labels:  getStackLabels(namespace, service.Deploy.Labels),
 				Dir:     service.WorkingDir,
 				User:    service.User,
-				Mounts:  convertVolumes(service.Volumes, volumes, namespace),
+				Mounts:  mounts,
 			},
 			Placement: &swarm.Placement{
 				Constraints: service.Deploy.Placement.Constraints,
