@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -14,6 +15,7 @@ import (
 	"github.com/aanand/compose-file/loader"
 	composetypes "github.com/aanand/compose-file/types"
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/mount"
 	networktypes "github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/cli"
@@ -173,6 +175,55 @@ func convertNetworks(
 	return nets
 }
 
+func convertVolumes(
+	serviceVolumes []string,
+	stackVolumes map[string]composetypes.VolumeConfig,
+	namespace string,
+) []mount.Mount {
+	var mounts []mount.Mount
+
+	for _, volumeString := range serviceVolumes {
+		var source, target string
+		var mountType mount.Type
+		var readOnly bool
+
+		// TODO: split Windows path mappings properly
+		parts := strings.SplitN(volumeString, ":", 3)
+
+		if len(parts) == 3 {
+			source = parts[0]
+			target = parts[1]
+			if parts[2] == "ro" {
+				readOnly = true
+			}
+		} else if len(parts) == 2 {
+			source = parts[0]
+			target = parts[1]
+		} else if len(parts) == 1 {
+			target = parts[0]
+		}
+
+		// TODO: catch Windows paths here
+		if strings.HasPrefix(source, "/") {
+			mountType = mount.TypeBind
+		} else {
+			mountType = mount.TypeVolume
+			// TODO: remove this duplication
+			source = fmt.Sprintf("%s_%s", namespace, source)
+		}
+
+		// TODO: driver + options
+		mounts = append(mounts, mount.Mount{
+			Type:     mountType,
+			Source:   source,
+			Target:   target,
+			ReadOnly: readOnly,
+		})
+	}
+
+	return mounts
+}
+
 func deployServices(
 	ctx context.Context,
 	dockerCli *command.DockerCli,
@@ -277,6 +328,7 @@ func convertService(
 				Labels:  getStackLabels(namespace, service.Deploy.Labels),
 				Dir:     service.WorkingDir,
 				User:    service.User,
+				Mounts:  convertVolumes(service.Volumes, volumes, namespace),
 			},
 			Placement: &swarm.Placement{
 				Constraints: service.Deploy.Placement.Constraints,
