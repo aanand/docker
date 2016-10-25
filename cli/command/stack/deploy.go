@@ -218,21 +218,23 @@ func convertVolumes(
 				return nil, fmt.Errorf("Undefined volume: %s", source)
 			}
 
-			volumeOptions = &mount.VolumeOptions{
-				Labels: stackVolume.Labels,
-			}
-
-			if stackVolume.Driver != "" {
-				volumeOptions.DriverConfig = &mount.Driver{
-					Name:    stackVolume.Driver,
-					Options: stackVolume.DriverOpts,
+			if stackVolume.ExternalName != "" {
+				source = stackVolume.ExternalName
+			} else {
+				volumeOptions = &mount.VolumeOptions{
+					Labels: stackVolume.Labels,
 				}
+
+				if stackVolume.Driver != "" {
+					volumeOptions.DriverConfig = &mount.Driver{
+						Name:    stackVolume.Driver,
+						Options: stackVolume.DriverOpts,
+					}
+				}
+
+				// TODO: remove this duplication
+				source = fmt.Sprintf("%s_%s", namespace, source)
 			}
-
-			// TODO: handle external volumes
-
-			// TODO: remove this duplication
-			source = fmt.Sprintf("%s_%s", namespace, source)
 		}
 
 		mounts = append(mounts, mount.Mount{
