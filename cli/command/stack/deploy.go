@@ -124,7 +124,7 @@ func createNetworks(
 	}
 
 	for internalName, network := range networks {
-		if network.ExternalName != "" {
+		if network.External.Name != "" {
 			continue
 		}
 
@@ -218,8 +218,8 @@ func convertVolumes(
 				return nil, fmt.Errorf("Undefined volume: %s", source)
 			}
 
-			if stackVolume.ExternalName != "" {
-				source = stackVolume.ExternalName
+			if stackVolume.External.Name != "" {
+				source = stackVolume.External.Name
 			} else {
 				volumeOptions = &mount.VolumeOptions{
 					Labels: stackVolume.Labels,
