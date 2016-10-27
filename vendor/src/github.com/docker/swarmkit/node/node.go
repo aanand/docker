@@ -22,6 +22,7 @@ import (
 	"github.com/docker/swarmkit/log"
 	"github.com/docker/swarmkit/manager"
 	"github.com/docker/swarmkit/remotes"
+	"github.com/docker/swarmkit/xnet"
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -104,7 +105,7 @@ type Node struct {
 	err                  error
 	agent                *agent.Agent
 	manager              *manager.Manager
-	roleChangeReq        chan api.NodeRole // used to send role updates from the dispatcher api on promotion/demotion
+	notifyNodeChange     chan *api.Node // used to send role updates from the dispatcher api on promotion/demotion
 }
 
 // RemoteAPIAddr returns address on which remote manager api listens.
@@ -148,7 +149,7 @@ func New(c *Config) (*Node, error) {
 		closed:               make(chan struct{}),
 		ready:                make(chan struct{}),
 		certificateRequested: make(chan struct{}),
-		roleChangeReq:        make(chan api.NodeRole, 1),
+		notifyNodeChange:     make(chan *api.Node, 1),
 	}
 	n.roleCond = sync.NewCond(n.RLocker())
 	n.connCond = sync.NewCond(n.RLocker())
@@ -248,16 +249,29 @@ func (n *Node) run(ctx context.Context) (err error) {
 	}
 
 	forceCertRenewal := make(chan struct{})
+	renewCert := func() {
+		select {
+		case forceCertRenewal <- struct{}{}:
+		case <-ctx.Done():
+		}
+	}
+
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case apirole := <-n.roleChangeReq:
+			case node := <-n.notifyNodeChange:
+				// If the server is sending us a ForceRenewal State, renew
+				if node.Certificate.Status.State == api.IssuanceStateRotate {
+					renewCert()
+					continue
+				}
 				n.Lock()
+				// If we got a role change, renew
 				lastRole := n.role
 				role := ca.WorkerRole
-				if apirole == api.NodeRoleManager {
+				if node.Spec.Role == api.NodeRoleManager {
 					role = ca.ManagerRole
 				}
 				if lastRole == role {
@@ -270,11 +284,7 @@ func (n *Node) run(ctx context.Context) (err error) {
 					n.roleCond.Broadcast()
 				}
 				n.Unlock()
-				select {
-				case forceCertRenewal <- struct{}{}:
-				case <-ctx.Done():
-					return
-				}
+				renewCert()
 			}
 		}
 	}()
@@ -380,7 +390,7 @@ func (n *Node) runAgent(ctx context.Context, db *bolt.DB, creds credentials.Tran
 		Managers:         n.remotes,
 		Executor:         n.config.Executor,
 		DB:               db,
-		NotifyRoleChange: n.roleChangeReq,
+		NotifyNodeChange: n.notifyNodeChange,
 		Credentials:      creds,
 	})
 	if err != nil {
@@ -550,7 +560,7 @@ func (n *Node) initManagerConnection(ctx context.Context, ready chan<- struct{})
 	addr := n.config.ListenControlAPI
 	opts = append(opts, grpc.WithDialer(
 		func(addr string, timeout time.Duration) (net.Conn, error) {
-			return net.DialTimeout("unix", addr, timeout)
+			return xnet.DialTimeoutLocal(addr, timeout)
 		}))
 	conn, err := grpc.Dial(addr, opts...)
 	if err != nil {

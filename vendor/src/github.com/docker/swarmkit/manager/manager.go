@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -21,12 +22,16 @@ import (
 	"github.com/docker/swarmkit/manager/dispatcher"
 	"github.com/docker/swarmkit/manager/health"
 	"github.com/docker/swarmkit/manager/keymanager"
-	"github.com/docker/swarmkit/manager/orchestrator"
+	"github.com/docker/swarmkit/manager/orchestrator/constraintenforcer"
+	"github.com/docker/swarmkit/manager/orchestrator/global"
+	"github.com/docker/swarmkit/manager/orchestrator/replicated"
+	"github.com/docker/swarmkit/manager/orchestrator/taskreaper"
 	"github.com/docker/swarmkit/manager/resourceapi"
 	"github.com/docker/swarmkit/manager/scheduler"
 	"github.com/docker/swarmkit/manager/state/raft"
 	"github.com/docker/swarmkit/manager/state/store"
 	"github.com/docker/swarmkit/protobuf/ptypes"
+	"github.com/docker/swarmkit/xnet"
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -82,10 +87,10 @@ type Manager struct {
 
 	caserver               *ca.Server
 	dispatcher             *dispatcher.Dispatcher
-	replicatedOrchestrator *orchestrator.ReplicatedOrchestrator
-	globalOrchestrator     *orchestrator.GlobalOrchestrator
-	taskReaper             *orchestrator.TaskReaper
-	constraintEnforcer     *orchestrator.ConstraintEnforcer
+	replicatedOrchestrator *replicated.Orchestrator
+	globalOrchestrator     *global.Orchestrator
+	taskReaper             *taskreaper.TaskReaper
+	constraintEnforcer     *constraintenforcer.ConstraintEnforcer
 	scheduler              *scheduler.Scheduler
 	allocator              *allocator.Allocator
 	keyManager             *keymanager.KeyManager
@@ -128,11 +133,13 @@ func New(config *Config) (*Manager, error) {
 	// externally-reachable address.
 	tcpAddr := config.AdvertiseAddr
 
+	var tcpAddrPort string
 	if tcpAddr == "" {
 		// Otherwise, we know we are joining an existing swarm. Use a
 		// wildcard address to trigger remote autodetection of our
 		// address.
-		_, tcpAddrPort, err := net.SplitHostPort(config.ProtoAddr["tcp"])
+		var err error
+		_, tcpAddrPort, err = net.SplitHostPort(config.ProtoAddr["tcp"])
 		if err != nil {
 			return nil, fmt.Errorf("missing or invalid listen address %s", config.ProtoAddr["tcp"])
 		}
@@ -143,12 +150,15 @@ func New(config *Config) (*Manager, error) {
 		tcpAddr = net.JoinHostPort("0.0.0.0", tcpAddrPort)
 	}
 
-	err := os.MkdirAll(filepath.Dir(config.ProtoAddr["unix"]), 0700)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create socket directory")
+	// don't create a socket directory if we're on windows. we used named pipe
+	if runtime.GOOS != "windows" {
+		err := os.MkdirAll(filepath.Dir(config.ProtoAddr["unix"]), 0700)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create socket directory")
+		}
 	}
 
-	err = os.MkdirAll(config.StateDir, 0700)
+	err := os.MkdirAll(config.StateDir, 0700)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create state directory")
 	}
@@ -166,7 +176,13 @@ func New(config *Config) (*Manager, error) {
 		listeners = make(map[string]net.Listener)
 
 		for proto, addr := range config.ProtoAddr {
-			l, err := net.Listen(proto, addr)
+			var l net.Listener
+			var err error
+			if proto == "unix" {
+				l, err = xnet.ListenLocal(addr)
+			} else {
+				l, err = net.Listen(proto, addr)
+			}
 
 			// A unix socket may fail to bind if the file already
 			// exists. Try replacing the file.
@@ -179,14 +195,14 @@ func New(config *Config) (*Manager, error) {
 			}
 			if proto == "unix" && unwrappedErr == syscall.EADDRINUSE {
 				os.Remove(addr)
-				l, err = net.Listen(proto, addr)
+				l, err = xnet.ListenLocal(addr)
 				if err != nil {
 					return nil, err
 				}
 			} else if err != nil {
 				return nil, err
 			}
-			if proto == "tcp" {
+			if proto == "tcp" && tcpAddrPort == "0" {
 				// in case of 0 port
 				tcpAddr = l.Addr().String()
 			}
@@ -263,9 +279,9 @@ func (m *Manager) Run(parent context.Context) error {
 
 	authorize := func(ctx context.Context, roles []string) error {
 		var (
-			removedNodes []*api.RemovedNode
-			clusters     []*api.Cluster
-			err          error
+			blacklistedCerts map[string]*api.BlacklistedCertificate
+			clusters         []*api.Cluster
+			err              error
 		)
 
 		m.raftNode.MemoryStore().View(func(readTx store.ReadTx) {
@@ -276,11 +292,11 @@ func (m *Manager) Run(parent context.Context) error {
 		// Not having a cluster object yet means we can't check
 		// the blacklist.
 		if err == nil && len(clusters) == 1 {
-			removedNodes = clusters[0].RemovedNodes
+			blacklistedCerts = clusters[0].BlacklistedCertificates
 		}
 
 		// Authorize the remote roles, ensure they can only be forwarded by managers
-		_, err = ca.AuthorizeForwardedRoleAndOrg(ctx, roles, []string{ca.ManagerRole}, m.config.SecurityConfig.ClientTLSCreds.Organization(), removedNodes)
+		_, err = ca.AuthorizeForwardedRoleAndOrg(ctx, roles, []string{ca.ManagerRole}, m.config.SecurityConfig.ClientTLSCreds.Organization(), blacklistedCerts)
 		return err
 	}
 
@@ -651,10 +667,10 @@ func (m *Manager) becomeLeader(ctx context.Context) {
 		log.G(ctx).WithError(err).Error("root key-encrypting-key rotation failed")
 	}
 
-	m.replicatedOrchestrator = orchestrator.NewReplicatedOrchestrator(s)
-	m.constraintEnforcer = orchestrator.NewConstraintEnforcer(s)
-	m.globalOrchestrator = orchestrator.NewGlobalOrchestrator(s)
-	m.taskReaper = orchestrator.NewTaskReaper(s)
+	m.replicatedOrchestrator = replicated.NewReplicatedOrchestrator(s)
+	m.constraintEnforcer = constraintenforcer.New(s)
+	m.globalOrchestrator = global.NewGlobalOrchestrator(s)
+	m.taskReaper = taskreaper.New(s)
 	m.scheduler = scheduler.New(s)
 	m.keyManager = keymanager.New(s, keymanager.DefaultConfig())
 
@@ -706,21 +722,21 @@ func (m *Manager) becomeLeader(ctx context.Context) {
 		}
 	}(m.scheduler)
 
-	go func(constraintEnforcer *orchestrator.ConstraintEnforcer) {
+	go func(constraintEnforcer *constraintenforcer.ConstraintEnforcer) {
 		constraintEnforcer.Run()
 	}(m.constraintEnforcer)
 
-	go func(taskReaper *orchestrator.TaskReaper) {
+	go func(taskReaper *taskreaper.TaskReaper) {
 		taskReaper.Run()
 	}(m.taskReaper)
 
-	go func(orchestrator *orchestrator.ReplicatedOrchestrator) {
+	go func(orchestrator *replicated.Orchestrator) {
 		if err := orchestrator.Run(ctx); err != nil {
 			log.G(ctx).WithError(err).Error("replicated orchestrator exited with an error")
 		}
 	}(m.replicatedOrchestrator)
 
-	go func(globalOrchestrator *orchestrator.GlobalOrchestrator) {
+	go func(globalOrchestrator *global.Orchestrator) {
 		if err := globalOrchestrator.Run(ctx); err != nil {
 			log.G(ctx).WithError(err).Error("global orchestrator exited with an error")
 		}
