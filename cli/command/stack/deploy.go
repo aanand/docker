@@ -351,14 +351,15 @@ func convertService(
 		},
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: swarm.ContainerSpec{
-				Image:   service.Image,
-				Command: service.Entrypoint,
-				Args:    service.Command,
-				Env:     convertEnvironment(service.Environment),
-				Labels:  getStackLabels(namespace, service.Deploy.Labels),
-				Dir:     service.WorkingDir,
-				User:    service.User,
-				Mounts:  mounts,
+				Image:    service.Image,
+				Command:  service.Entrypoint,
+				Args:     service.Command,
+				Hostname: service.Hostname,
+				Env:      convertEnvironment(service.Environment),
+				Labels:   getStackLabels(namespace, service.Deploy.Labels),
+				Dir:      service.WorkingDir,
+				User:     service.User,
+				Mounts:   mounts,
 			},
 			Placement: &swarm.Placement{
 				Constraints: service.Deploy.Placement.Constraints,
